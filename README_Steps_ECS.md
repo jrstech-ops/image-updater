@@ -1,3 +1,6 @@
+Hi! Welcome Here's the step by step guide how to create node.js application. Put the node.js app to docker image.Pusher it on amazon ECR. Launch the application using AWS ECS! Goodluck!
+
+
 Step 1: Terraform automate Infrastructure
 
 ✅ Your updated Terraform configuration looks complete and correct! You’ve successfully added:
