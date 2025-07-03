@@ -1,0 +1,280 @@
+
+
+GOAL: Set up full CI/CD
+Using:
+✅ GitHub (code + workflow)
+
+
+✅ Docker + ECR (container image)
+
+
+✅ ECS Fargate (deployment target)
+
+
+✅ Terraform (infra already provisioned)
+
+
+
+
+🧩 STEP 0: QUICK CHECKLIST
+✅ You already have:
+Docker app on Ubuntu (app.js, package.json, Dockerfile)
+
+
+AWS ECR and ECS Fargate via Terraform (already working)
+
+
+GitHub account (✅ or we'll set it up now?)
+
+
+
+
+🥇 STEP 1: Create GitHub Repo
+Go to: https://github.com
+
+
+Create a new repository (e.g., image-resizer)
+
+
+Select:
+
+
+✅ Public or private (your choice)
+
+
+✅ “Add README”
+
+
+✅ No .gitignore or license
+
+
+Click Create repositor
+
+
+🥇 Step 1: Create a GitHub Repository
+✅ Step 1: Generate a Personal Access Token (PAT)
+Go to GitHub: Developer Settings - Tokens.
+
+
+Click "Fine-grained tokens" or "Tokens (classic)".
+
+
+Click "Generate new token" (choose classic unless you know you need fine-grained).
+
+
+Add a note (e.g., “Token for pushing code”).
+
+
+Set the expiration date (e.g., 30 days or "No expiration" for long-term).
+
+
+Select scopes (for pushing code, you need at least):
+
+
+repo (for full control of private repositories)
+
+
+Click Generate token.
+
+
+Copy the token – you won’t see it again after this screen!
+
+
+✅ Recommended Scopes for Your Use Case
+When creating your token:
+Scope
+Description
+Required?
+repo
+Full control of code repositories
+✅ Yes
+workflow
+Control GitHub Actions workflows
+✅ Yes
+write:packages
+Write access to GitHub Packages (optional)
+❌ Optional (only if using GitHub Container Registry)
+read:org
+Read organization membership
+❌ Optional
+
+
+
+
+
+
+
+
+
+
+
+
+🥈 Step 2: Install Git (if not yet installed) Push Code to GitHub
+
+sudo apt update
+sudo apt install git -y
+
+cd /root/myapp  # Go to the folder with app.js, Dockerfile, package.json
+
+git init
+git remote add origin https://github.com/jrstech-ops/image-updater.git
+git add .
+git commit -m "Initial commit with Docker app"
+git branch -M main
+git push -u origin main
+
+
+
+
+✅ STEP 3: Add AWS Secrets to GitHub
+Go to your GitHub repository →
+ Click Settings > Secrets and variables > Actions →
+ Click “New repository secret” and add the following:
+
+Name
+Example Value
+AWS_ACCESS_KEY_ID
+AKIAQ54B6CH4D3N2QHH4
+AWS_SECRET_ACCESS_KEY
+3r2NVJad2veqe5M+A7Qsvcdv6PM2a1KEP6mp9W9G
+AWS_REGION
+ap-southeast-1
+AWS_ACCOUNT_ID
+064160141816
+ECR_REPO_NAME
+your ECR repo name (e.g., image-resizer) myapp
+
+
+
+
+🛡️ These secrets will allow GitHub Actions to:
+Log in to ECR
+
+
+Push Docker image
+
+
+Register a new ECS task definition
+
+
+Deploy new image to ECS Fargate service
+✅ STEP 4: Create the GitHub Actions CI/CD Workflow
+This file will:
+Build the Docker image
+
+
+Push it to Amazon ECR
+
+
+Update the ECS Task Definition
+
+
+Update your ECS Fargate service
+On Ubuntu /root/myapp
+
+🛠 Instructions (on your Ubuntu server)
+Inside your project folder:
+
+
+bash
+CopyEdit
+mkdir -p .github/workflows
+nano .github/workflows/deploy.yml
+
+Paste the full workflow below:
+
+
+🔄 Update Your GitHub Workflow (deploy.yml)
+Here’s the final version to paste into:
+bash
+CopyEdit
+nano .github/workflows/deploy.yml
+
+Replace the old content with this:
+name: Deploy to ECS Fargate
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_REPO_NAME: myapp
+  CLUSTER_NAME: myapp-cluster
+  SERVICE_NAME: myapp-service
+  TASK_FAMILY: myapp-task
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, Tag, and Push Docker image
+      run: |
+        IMAGE_TAG=$(echo $GITHUB_SHA | cut -c1-7)
+        IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME}:$IMAGE_TAG
+
+        docker build -t $IMAGE_URI .
+        docker push $IMAGE_URI
+
+        echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+    - name: Register New Task Definition with Updated Image
+      run: |
+        aws ecs describe-task-definition \
+          --task-definition $TASK_FAMILY \
+          --query "taskDefinition" > task-def.json
+
+        jq --arg IMAGE "$IMAGE_URI" '
+          .containerDefinitions[0].image = $IMAGE
+          | {
+              family,
+              networkMode,
+              requiresCompatibilities,
+              cpu,
+              memory,
+              executionRoleArn,
+              containerDefinitions
+            }' task-def.json > new-task-def.json
+
+        TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --cli-input-json file://new-task-def.json \
+          --query "taskDefinition.taskDefinitionArn" \
+          --output text)
+
+        echo "TASK_DEF_ARN=$TASK_DEF_ARN" >> $GITHUB_ENV
+
+    - name: Update ECS Service
+      run: |
+        aws ecs update-service \
+          --cluster $CLUSTER_NAME \
+          --service $SERVICE_NAME \
+          --task-definition $TASK_DEF_ARN
+
+🛠 After Pasting:
+bash
+CopyEdit
+git add .github/workflows/deploy.yml
+git commit -m "Update deploy workflow with correct ECR image"
+git push
+
+
+🟢 Then:
+Go back to GitHub → Actions tab
+ Watch the new workflow run and confirm deployment.
+

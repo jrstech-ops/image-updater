@@ -1,0 +1,79 @@
+✅ PHASE 1: Learn Docker & Container Basics
+1.1 Install Docker
+
+Ubuntu:
+
+
+sudo apt update
+sudo apt install -y docker.io
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker $USER
+
+Logout and login again after adding yourself to the docker group.
+1.2 Test Docker Installation
+docker version
+docker run hello-world
+
+
+✅ PHASE 2: Build Simple Docker Image with Dockerfile
+2.1 Create a Simple Web App
+Let’s use Node.js for simplicity. Create a folder and file:
+mkdir myapp && cd myapp
+
+app.js
+const http = require('http');
+const port = 3000;
+
+const server = http.createServer((req, res) => {
+  res.end('Hello from Docker!');
+});
+
+server.listen(port, () => {
+  console.log(`App running on http://localhost:${port}`);
+});
+
+package.json
+{
+  "name": "myapp",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  }
+}
+
+Dockerfile
+FROM node:18
+WORKDIR /app
+COPY . .
+RUN npm install
+EXPOSE 3000
+CMD ["npm", "start"]
+
+2.2 Build Docker Image
+docker build -t myapp .
+
+
+✅ PHASE 3: Run Containers & Use Ports/Volumes
+3.1 Run Locally with Port Mapping
+docker run -d -p 3000:3000 --name myapp-container myapp
+
+Test it in your browser:
+ 👉 http://localhost:3000
+3.2 Mount Volume (Optional)
+docker run -v $(pwd):/app -p 3000:3000 myapp
+
+
+✅ PHASE 4: Push Docker Image to AWS ECR
+4.1 Create ECR Repo
+aws ecr create-repository --repository-name myapp --region ap-southeast-1
+
+4.2 Authenticate Docker to ECR
+aws ecr get-login-password --region ap-southeast-1 | docker login --username AWS --password-stdin <your_account_id>.dkr.ecr.ap-southeast-1.amazonaws.com
+
+4.3 Tag and Push Image
+docker tag myapp <your_account_id>.dkr.ecr.ap-southeast-1.amazonaws.com/myapp
+docker push <your_account_id>.dkr.ecr.ap-southeast-1.amazonaws.com/myapp
+
+
